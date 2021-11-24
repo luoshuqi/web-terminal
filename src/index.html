@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Web Terminal</title>
+    <link href="https://cdn.jsdelivr.net/npm/xterm@4.11.0/css/xterm.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/xterm@4.11.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-attach@0.6.0/lib/xterm-addon-attach.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.5.0/lib/xterm-addon-fit.min.js"></script>
+    <style>
+        html, body, #xterm {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+<div id="xterm"></div>
+<script>
+    let url = location.href.replace(/^http/, "ws");
+    url.endsWith('/') || (url += '/');
+    url += "ws";
+
+    const ws = new WebSocket(url);
+    ws.onerror = () => alert('连接出错');
+    ws.onclose = () => alert('连接关闭');
+    ws.onopen = () => {
+        const term = new Terminal({
+            fontSize: 15,
+            fontFamily: "monospace",
+            cursorBlink: true,
+            cursorStyle: 'underline'
+        });
+        const attachAddon = new AttachAddon.AttachAddon(ws);
+        const fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(attachAddon);
+        term.loadAddon(fitAddon);
+        term.open(document.getElementById('xterm'));
+        window.onresize = () => {
+            resize(fitAddon);
+        };
+        resize(fitAddon);
+        term.focus();
+    }
+
+    function resize(fitAddon) {
+        fitAddon.fit();
+        const dimensions = fitAddon.proposeDimensions();
+        if (dimensions) {
+            let arr = new Uint8Array(5);
+            arr[0] = 0xFF;
+            arr[1] = dimensions.rows & 0xFF;
+            arr[2] = (dimensions.rows >> 8) & 0XFF;
+            arr[3] = dimensions.cols & 0xFF;
+            arr[4] = (dimensions.cols >> 8) & 0XFF;
+            ws.send(arr.buffer);
+        }
+    }
+</script>
+</body>
+</html>
