@@ -37,7 +37,7 @@ pub fn pty_fork() -> io::Result<Fork> {
     match unsafe { fork()? } {
         ForkResult::Parent { child } => Ok(Fork::Parent(
             child,
-            Master(AsyncFd::new(master.into_raw_fd())?),
+            Master(AsyncFd::new(master.into_raw_fd()).unwrap()),
         )),
         ForkResult::Child => match setup_slave(&master) {
             Ok(()) => Ok(Fork::Child),
@@ -67,10 +67,10 @@ fn setup_slave(master: &PtyMaster) -> nix::Result<()> {
         Mode::S_IRUSR | Mode::S_IWUSR,
     )?);
     let fd = slave.0;
-    if dup2(fd, STDIN_FILENO)? == fd
-        || dup2(fd, STDOUT_FILENO)? == fd
-        || dup2(fd, STDERR_FILENO)? == fd
-    {
+    dup2(fd, STDIN_FILENO)?;
+    dup2(fd, STDOUT_FILENO)?;
+    dup2(fd, STDERR_FILENO)?;
+    if fd == STDIN_FILENO || fd == STDOUT_FILENO || fd == STDERR_FILENO {
         forget(slave);
     }
     Ok(())
