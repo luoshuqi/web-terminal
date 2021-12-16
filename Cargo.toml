@@ -7,7 +7,7 @@ edition = "2021"
 [dependencies]
 ws = { git = "https://gitee.com/luoshuqi/ws" }
 tokio = { version = "1", features = ["full"] }
-libc = "0.2"
+nix = "0"
 log = "0"
 env_logger = "0"
 structopt = "0"

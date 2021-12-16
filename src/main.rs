@@ -12,15 +12,6 @@ use ws::request::Request;
 use ws::response::{Response, Status, NOT_FOUND, OK};
 use ws::websocket::WebSocket;
 
-macro_rules! c {
-    ($($args:tt)+) => {
-        match libc::$($args)* {
-            -1 => return Err(io::Error::last_os_error()),
-            ret => ret,
-        }
-    };
-}
-
 mod pty;
 mod terminal;
 
