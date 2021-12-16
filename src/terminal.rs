@@ -1,3 +1,5 @@
+use std::convert::Infallible;
+use std::env::var;
 use std::error::Error;
 use std::ffi::{c_void, CString};
 use std::io;
@@ -11,21 +13,29 @@ use log::{debug, error, warn};
 use nix::libc::{ioctl, winsize, TIOCSWINSZ};
 use nix::sys::signal::{kill, Signal};
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
-use nix::unistd::{execv, Pid};
+use nix::unistd::{chdir, execve, setgid, setuid, Pid, User};
+use pam_client::conv_mock::Conversation;
+use pam_client::{Context, Flag, Session};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use ws::websocket::{Message, Opcode, WebSocket};
 
-use crate::pty::{self, Fork};
+use crate::pty::{pty_fork, Fork};
 
 pub async fn start<T: AsyncRead + AsyncWrite + Unpin>(
     mut ws: WebSocket<T>,
-    shell: impl ToString,
+    user: User,
+    mut context: Context<Conversation>,
 ) -> Result<(), Box<dyn Error>> {
-    let (child, mut master) = match pty::pty_fork()? {
+    let session = context.open_session(Flag::NONE)?;
+    let (child, mut master) = match pty_fork()? {
         Fork::Parent(child, master) => (child, master),
-        _ => exec(shell),
+        Fork::Child => {
+            let err = exec(user, session).unwrap_err();
+            error!("exec: {:?}", err);
+            exit(1);
+        }
     };
-    let _child = KillAndWait(child);
+    let _wait = Wait(child);
 
     let mut master_active = true;
     let mut close_send = false;
@@ -71,10 +81,24 @@ pub async fn start<T: AsyncRead + AsyncWrite + Unpin>(
     Ok(())
 }
 
-fn exec(shell: impl ToString) -> ! {
-    let shell = CString::new(shell.to_string()).unwrap();
-    error!("exec: {:?}", execv(&shell, &[&shell]).unwrap_err());
-    exit(1);
+fn exec(user: User, mut session: Session<Conversation>) -> nix::Result<Infallible> {
+    let _ = session.putenv(&format!("HOME={}", user.dir.display()));
+    if let Ok(v) = var("COLORTERM") {
+        let _ = session.putenv(&format!("COLORTERM={}", v));
+    }
+    if let Ok(v) = var("TERM") {
+        let _ = session.putenv(&format!("TERM={}", v));
+    }
+
+    setgid(user.gid)?;
+    setuid(user.uid)?;
+    chdir(&user.dir)?;
+    let shell = CString::new(user.shell.to_str().unwrap().to_string()).unwrap();
+    execve(
+        &shell,
+        &[&shell, &CString::new("--login").unwrap()],
+        session.envlist().as_ref(),
+    )
 }
 
 fn handle_resize(payload: &[u8], master: RawFd) {
@@ -102,14 +126,14 @@ fn resize(fd: i32, row: c_ushort, col: c_ushort) -> io::Result<()> {
     if code == 0 {
         Ok(())
     } else {
-        Err(last_os_error())
+        Err(io::Error::last_os_error())
     }
 }
 
 // drop 时杀掉并 wait 子进程
-struct KillAndWait(Pid);
+struct Wait(Pid);
 
-impl Drop for KillAndWait {
+impl Drop for Wait {
     fn drop(&mut self) {
         // 发送 SIGHUP
         // The SIGHUP ("hang-up") signal is used to report that the user’s terminal is disconnected
@@ -138,8 +162,4 @@ impl Drop for KillAndWait {
             }
         }
     }
-}
-
-fn last_os_error() -> io::Error {
-    io::Error::last_os_error()
 }
