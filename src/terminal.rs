@@ -76,14 +76,17 @@ pub async fn start<T: AsyncRead + AsyncWrite + Unpin>(
     Ok(())
 }
 
+fn put_env(session: &mut Session<Conversation>, key: &str) {
+    if let Ok(value) = var(key) {
+        let _ = session.putenv(&format!("{}={}", key, value));
+    }
+}
+
 fn exec(user: User, mut session: Session<Conversation>) -> nix::Result<Infallible> {
     let _ = session.putenv(&format!("HOME={}", user.dir.display()));
-    if let Ok(v) = var("COLORTERM") {
-        let _ = session.putenv(&format!("COLORTERM={}", v));
-    }
-    if let Ok(v) = var("TERM") {
-        let _ = session.putenv(&format!("TERM={}", v));
-    }
+    put_env(&mut session, "COLORTERM");
+    put_env(&mut session, "TERM");
+    put_env(&mut session, "LANG");
 
     setgid(user.gid)?;
     setuid(user.uid)?;
