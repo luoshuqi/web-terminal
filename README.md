@@ -27,4 +27,4 @@ web-terminal -b 127.0.0.1:8888
 
 [点此查看演示](https://demo.trait.pub/web-terminal/) （用户名密码均为 `demo`）
 
-[下载（Linux x64）](https://gitee.com/luoshuqi/web-terminal/attach_files/889494/download/web-terminal)
+[下载（Linux x64）](https://gitee.com/luoshuqi/web-terminal/attach_files/916335/download/web-terminal)
