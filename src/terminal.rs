@@ -6,14 +6,10 @@ use std::io;
 use std::os::raw::c_ushort;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::process::exit;
-use std::thread::sleep;
-use std::time::Duration;
 
-use log::{debug, error, warn};
+use log::{error, warn};
 use nix::libc::{ioctl, winsize, TIOCSWINSZ};
-use nix::sys::signal::{kill, Signal};
-use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
-use nix::unistd::{chdir, execve, setgid, setuid, Pid, User};
+use nix::unistd::{chdir, execve, setgid, setuid, User};
 use pam_client::conv_mock::Conversation;
 use pam_client::{Context, Flag, Session};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -27,7 +23,7 @@ pub async fn start<T: AsyncRead + AsyncWrite + Unpin>(
     mut context: Context<Conversation>,
 ) -> Result<(), Box<dyn Error>> {
     let session = context.open_session(Flag::NONE)?;
-    let (child, mut master) = match pty_fork()? {
+    let (_child, mut master) = match pty_fork()? {
         Fork::Parent(child, master) => (child, master),
         Fork::Child => {
             let err = exec(user, session).unwrap_err();
@@ -35,7 +31,6 @@ pub async fn start<T: AsyncRead + AsyncWrite + Unpin>(
             exit(1);
         }
     };
-    let _wait = Wait(child);
 
     let mut master_active = true;
     let mut close_send = false;
@@ -127,39 +122,5 @@ fn resize(fd: i32, row: c_ushort, col: c_ushort) -> io::Result<()> {
         Ok(())
     } else {
         Err(io::Error::last_os_error())
-    }
-}
-
-// drop 时杀掉并 wait 子进程
-struct Wait(Pid);
-
-impl Drop for Wait {
-    fn drop(&mut self) {
-        // 发送 SIGHUP
-        // The SIGHUP ("hang-up") signal is used to report that the user’s terminal is disconnected
-        debug!("send SIGHUP to {}", self.0);
-        if let Err(err) = kill(self.0, Signal::SIGHUP) {
-            error!("kill {}: {:?}", self.0, err);
-        }
-
-        let mut count = 0;
-        loop {
-            match waitpid(self.0, Some(WaitPidFlag::WNOHANG)) {
-                Ok(status) if status.pid().is_some() => break,
-                Ok(WaitStatus::StillAlive) => {
-                    count += 1;
-                    if count < 8 {
-                        // 进程还没退出，继续等待
-                        // FIXME sleep 会导致其它异步任务无法执行。除了新建一个线程 ，有没有不阻塞当前线程的方法？
-                        sleep(Duration::from_millis(200));
-                    } else {
-                        error!("wait process {} timeout", self.0);
-                        break;
-                    }
-                }
-                Ok(_) => unreachable!(),
-                Err(err) => break error!("wait process {}: {:?}", self.0, err),
-            }
-        }
     }
 }

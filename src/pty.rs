@@ -5,12 +5,16 @@ use std::os::unix::prelude::IntoRawFd;
 use std::pin::Pin;
 use std::process::exit;
 use std::task::{Context, Poll};
+use std::thread::sleep;
+use std::time::Duration;
 
 use log::error;
 use nix::fcntl::{fcntl, open, OFlag, F_SETFL};
 use nix::libc::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
 use nix::pty::{grantpt, posix_openpt, ptsname_r, unlockpt, PtyMaster};
+use nix::sys::signal::{kill, Signal};
 use nix::sys::stat::Mode;
+use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{close, dup2, fork, read, setsid, write, ForkResult, Pid};
 use tokio::io::unix::AsyncFd;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
@@ -25,7 +29,7 @@ macro_rules! ready {
 }
 
 pub enum Fork {
-    Parent(Pid, Master),
+    Parent(Child, Master),
     Child,
 }
 
@@ -36,8 +40,8 @@ pub fn pty_fork() -> io::Result<Fork> {
     let master = open_master()?;
     match unsafe { fork()? } {
         ForkResult::Parent { child } => Ok(Fork::Parent(
-            child,
-            Master(AsyncFd::new(master.into_raw_fd()).unwrap()),
+            Child(child),
+            Master(AsyncFd::new(master.into_raw_fd())?),
         )),
         ForkResult::Child => match setup_slave(&master) {
             Ok(()) => Ok(Fork::Child),
@@ -137,5 +141,37 @@ impl AsyncWrite for Master {
 
     fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Poll::Ready(Ok(()))
+    }
+}
+
+pub struct Child(Pid);
+
+impl Drop for Child {
+    fn drop(&mut self) {
+        // 发送 SIGHUP
+        // The SIGHUP ("hang-up") signal is used to report that the user’s terminal is disconnected
+        if let Err(err) = kill(self.0, Signal::SIGHUP) {
+            error!("kill {}: {:?}", self.0, err);
+        }
+
+        let mut count = 0;
+        loop {
+            match waitpid(self.0, Some(WaitPidFlag::WNOHANG)) {
+                Ok(status) if status.pid().is_some() => break,
+                Ok(WaitStatus::StillAlive) => {
+                    count += 1;
+                    if count < 8 {
+                        // 进程还没退出，继续等待
+                        // FIXME sleep 会导致其它异步任务无法执行。除了新建一个线程 ，有没有不阻塞当前线程的方法？
+                        sleep(Duration::from_millis(200));
+                    } else {
+                        error!("wait process {} timeout", self.0);
+                        break;
+                    }
+                }
+                Ok(_) => unreachable!(),
+                Err(err) => break error!("wait process {}: {:?}", self.0, err),
+            }
+        }
     }
 }
