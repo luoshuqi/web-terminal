@@ -1,11 +1,11 @@
 # web-terminal
 
-#### 介绍
+### 介绍
 用 Rust 编写的网页终端。
 
 实现方式：用 WebSocket 连接前端 [xterm.js](https://xtermjs.org/) 和后端 shell 进程。
 
-#### 使用说明
+### 使用说明
 
 ```shell
 web-terminal -b 127.0.0.1:8888
@@ -13,7 +13,7 @@ web-terminal -b 127.0.0.1:8888
 
 -b 选项指定地址。
 
-#### 用户验证
+### 用户验证
 
 用户验证使用 `PAM`, service name 为 `web-terminal`。
 
