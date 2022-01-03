@@ -60,7 +60,7 @@ pub async fn start<T: AsyncRead + AsyncWrite + Unpin>(
             n = master.read(&mut buf), if master_active => {
                 match n {
                     Ok(n) if n > 0 => if !close_send {
-                        ws.send(Message::text(&buf[..n])).await?;
+                        ws.send(Message::binary(&buf[..n])).await?;
                     }
                     _ => {
                         master_active = false;
