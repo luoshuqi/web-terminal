@@ -5,6 +5,21 @@
 
 实现方式：用 WebSocket 连接前端 [xterm.js](https://xtermjs.org/) 和后端 shell 进程。
 
+### 构建
+
+需要 `PAM` 开发库，`Ubuntu` 系统可用以下命令安装：
+```shell
+sudo apt install libpam0g-dev
+```
+
+构建：
+
+```shell
+cargo build --release
+```
+
+`bin` 目录有编译好的适用于 `x86_64 Ubuntu 20.04` 的可执行文件（只在 `Ubuntu 20.04` 上测试过）。
+
 ### 使用说明
 
 ```shell
@@ -26,5 +41,3 @@ web-terminal -b 127.0.0.1:8888
 
 
 [点此查看演示](https://demo.trait.pub/web-terminal/) （用户名密码均为 `demo`）
-
-[下载（Linux x64）](https://gitee.com/luoshuqi/web-terminal/attach_files/916335/download/web-terminal)
